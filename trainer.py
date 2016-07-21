@@ -41,7 +41,7 @@ LOGIN_OAUTH = 'https://sso.pokemon.com/sso/oauth2.0/accessToken'
 
 APP = 'com.nianticlabs.pokemongo'
 
-with open('credentials.json') as file:
+with open('config/credentials.json') as file:
 	credentials = json.load(file)
 
 PTC_CLIENT_SECRET = credentials.get('ptc_client_secret', None)
@@ -254,15 +254,44 @@ def heartbeat(api_endpoint, access_token, response):
     heartbeat.ParseFromString(payload)
     return heartbeat
 
+def get_args():
+    # load default args
+    default_args = {
+        "DEBUG": True,
+        "ampm_clock": False,
+        "auth_service": "ptc",
+        "auto_refresh": None,
+        "china": False,
+        "debug": False,
+        "display_gym": False,
+        "display_pokestop": False,
+        "host": "127.0.0.1",
+        "ignore": None,
+        "locale": "en",
+        "only": None,
+        "onlylure": False,
+        "port": 5000,
+        "step_limit": 4
+    }
+    # load config file
+    with open('config/config.json') as data_file:
+        data = json.load(data_file)
+        for key in data:
+            default_args[key] = str(data[key])
+        # create namespace obj
+        namespace = argparse.Namespace()
+        for key in default_args:
+            vars(namespace)[key] = default_args[key]
+        return namespace
+
 def main():
-    pokemons = json.load(open('pokemon.json'))
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-u", "--username", help="PTC Username", required=True)
-    parser.add_argument("-p", "--password", help="PTC Password", required=True)
-    parser.add_argument("-l", "--location", help="Location", required=True)
-    parser.add_argument("-d", "--debug", help="Debug Mode", action='store_true')
-    parser.set_defaults(DEBUG=False)
-    args = parser.parse_args()
+    
+    args = get_args()
+    
+
+    print('[+] Locale is ' + args.locale)
+    pokemons = json.load(
+        open(path + '/locales/pokemon.' + args.locale + '.json'))
 
     if args.debug:
         global DEBUG
