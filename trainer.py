@@ -186,6 +186,23 @@ def get_api_endpoint(service, access_token, api=API_URL):
 
     return 'https://%s/rpc' % profile_response.api_url
 
+def retrying_get_profile(service, access_token, api, useauth, *reqq):
+    profile_response = None
+    while not profile_response:
+        profile_response = get_profile(service, access_token, api, useauth,
+                                       *reqq)
+        if not hasattr(profile_response, 'payload'):
+            debug(
+                'retrying_get_profile: get_profile returned no payload, retrying')
+            profile_response = None
+            continue
+        if not profile_response.payload:
+            debug(
+                'retrying_get_profile: get_profile returned no-len payload, retrying')
+            profile_response = None
+
+    return profile_response
+    
 def login_google(username, password):
     print '[!] Google login for: {}'.format(username)
     r1 = perform_master_login(username, password, ANDROID_ID)
@@ -320,7 +337,7 @@ def main():
         return
     print('[+] RPC Session Token: {} ...'.format(access_token[:25]))
 
-    api_endpoint = get_api_endpoint(access_token)
+    api_endpoint = get_api_endpoint(args.auth_service, access_token)
     if api_endpoint is None:
         print('[-] RPC server offline')
         return
