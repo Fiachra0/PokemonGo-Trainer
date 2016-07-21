@@ -587,13 +587,9 @@ def process_step(args, api_endpoint, access_token, profile_response,
                     if hash not in seen:
                         visible.append(wild)
                         seen.add(hash)
-                if cell.Fort:
-                    for Fort in cell.Fort:
-                        if Fort.Enabled == True:
-                            if args.china:
-                                (Fort.Latitude, Fort.Longitude) = \
-        except AttributeError:
+         except AttributeError:
             break
+        
 
     for poke in visible:
         pokeid = str(poke.pokemon.PokemonId)
