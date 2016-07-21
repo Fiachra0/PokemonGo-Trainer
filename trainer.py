@@ -248,36 +248,43 @@ def login_ptc(username, password):
     access_token = re.sub('.*access_token=', '', access_token)
     return access_token
 
-def heartbeat(api_endpoint, access_token, response):
+def get_heartbeat(service,
+                  api_endpoint,
+                  access_token,
+                  response, ):
     m4 = pokemon_pb2.RequestEnvelop.Requests()
     m = pokemon_pb2.RequestEnvelop.MessageSingleInt()
     m.f1 = int(time.time() * 1000)
     m4.message = m.SerializeToString()
     m5 = pokemon_pb2.RequestEnvelop.Requests()
     m = pokemon_pb2.RequestEnvelop.MessageSingleString()
-    m.bytes = "05daf51635c82611d1aac95c0b051d3ec088a930"
+    m.bytes = '05daf51635c82611d1aac95c0b051d3ec088a930'
     m5.message = m.SerializeToString()
-
     walk = sorted(getNeighbors())
-
     m1 = pokemon_pb2.RequestEnvelop.Requests()
     m1.type = 106
     m = pokemon_pb2.RequestEnvelop.MessageQuad()
     m.f1 = ''.join(map(encode, walk))
-    m.f2 = "\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
+    m.f2 = \
+        "\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000"
     m.lat = COORDS_LATITUDE
     m.long = COORDS_LONGITUDE
     m1.message = m.SerializeToString()
-    response = get_profile(
-        access_token,
-        api_endpoint,
-        response.unknown7,
-        m1,
-        pokemon_pb2.RequestEnvelop.Requests(),
-        m4,
-        pokemon_pb2.RequestEnvelop.Requests(),
-        m5)
-    payload = response.payload[0]
+    response = get_profile(service,
+                           access_token,
+                           api_endpoint,
+                           response.unknown7,
+                           m1,
+                           pokemon_pb2.RequestEnvelop.Requests(),
+                           m4,
+                           pokemon_pb2.RequestEnvelop.Requests(),
+                           m5, )
+
+    try:
+        payload = response.payload[0]
+    except (AttributeError, IndexError):
+        return
+
     heartbeat = pokemon_pb2.ResponseEnvelop.HeartbeatPayload()
     heartbeat.ParseFromString(payload)
     return heartbeat
