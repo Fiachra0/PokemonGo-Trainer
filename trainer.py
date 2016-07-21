@@ -26,7 +26,7 @@ from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 from requests.adapters import ConnectionError
 from requests.models import InvalidURL
-from transform import *
+
 
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -537,6 +537,95 @@ def main():
         is_ampm_clock = True
 
     api_endpoint, access_token, profile_response = login(args)
+
+    ignore = []
+    only = []
+    if args.ignore:
+        ignore = [i.lower().strip() for i in args.ignore.split(',')]
+    elif args.only:
+        only = [i.lower().strip() for i in args.only.split(',')]
+
+    pos = 1
+    x = 0
+    y = 0
+    dx = 0
+    dy = -1
+
+    process_step(args, api_endpoint, access_token, profile_response,
+                     pokemonsJSON, ignore, only)
+
+
+#the action that occurs on each individual step
+def process_step(args, api_endpoint, access_token, profile_response,
+                 pokemonsJSON, ignore, only):
+    print('[+] Searching for Pokemon at location {} {}'.format(FLOAT_LAT, FLOAT_LONG))
+    origin = LatLng.from_degrees(FLOAT_LAT, FLOAT_LONG)
+    step_lat = FLOAT_LAT
+    step_long = FLOAT_LONG
+    parent = CellId.from_lat_lng(LatLng.from_degrees(FLOAT_LAT,
+                                                     FLOAT_LONG)).parent(15)
+    h = get_heartbeat(args.auth_service, api_endpoint, access_token,
+                      profile_response)
+    hs = [h]
+    seen = set([])
+
+    for child in parent.children():
+        latlng = LatLng.from_point(Cell(child).get_center())
+        set_location_coords(latlng.lat().degrees, latlng.lng().degrees, 0)
+        hs.append(
+            get_heartbeat(args.auth_service, api_endpoint, access_token,
+                          profile_response))
+    set_location_coords(step_lat, step_long, 0)
+    visible = []
+
+    for hh in hs:
+        try:
+            for cell in hh.cells:
+                for wild in cell.WildPokemon:
+                    hash = wild.SpawnPointId + ':' \
+                        + str(wild.pokemon.PokemonId)
+                    if hash not in seen:
+                        visible.append(wild)
+                        seen.add(hash)
+                if cell.Fort:
+                    for Fort in cell.Fort:
+                        if Fort.Enabled == True:
+                            if args.china:
+                                (Fort.Latitude, Fort.Longitude) = \
+        except AttributeError:
+            break
+
+    for poke in visible:
+        pokeid = str(poke.pokemon.PokemonId)
+        pokename = pokemonsJSON[pokeid]
+        if args.ignore:
+            if pokename.lower() in ignore or pokeid in ignore:
+                continue
+        elif args.only:
+            if pokename.lower() not in only and pokeid not in only:
+                continue
+
+        disappear_timestamp = time.time() + poke.TimeTillHiddenMs \
+            / 1000
+
+        if args.china:
+            (poke.Latitude, poke.Longitude) = \
+                transform_from_wgs_to_gcj(Location(poke.Latitude,
+                    poke.Longitude))
+
+
+        pokemon_obj = {
+            "lat": poke.Latitude,
+            "lng": poke.Longitude,
+            "disappear_time": disappear_timestamp,
+            "id": poke.pokemon.PokemonId,
+            "name": pokename
+        }
+
+        #if poke.SpawnPointId not in pokemons:
+        #    notifier.pokemon_found(pokemon_obj)
+
+        pokemons[poke.SpawnPointId] = pokemon_obj
 
 
 if __name__ == '__main__':
