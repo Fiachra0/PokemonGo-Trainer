@@ -17,6 +17,33 @@ from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from s2sphere import *
 
+def memoize(obj):
+    cache = obj.cache = {}
+
+    @functools.wraps(obj)
+    def memoizer(*args, **kwargs):
+        key = str(args) + str(kwargs)
+        if key not in cache:
+            cache[key] = obj(*args, **kwargs)
+        return cache[key]
+    return memoizer
+
+def parse_unicode(bytestring):
+    decoded_string = bytestring.decode(sys.getfilesystemencoding())
+    return decoded_string
+
+
+def debug(message):
+    if DEBUG:
+        print '[-] {}'.format(message)
+
+
+def time_left(ms):
+    s = ms / 1000
+    (m, s) = divmod(s, 60)
+    (h, m) = divmod(m, 60)
+    return (h, m, s)
+    
 def encode(cellid):
     output = []
     encoder._VarintEncoder()(output.append, cellid)
@@ -414,7 +441,7 @@ def main():
         return
     print('[+] RPC Session Token: {} ...'.format(access_token[:25]))
 
-       api_endpoint = get_api_endpoint(args.auth_service, access_token)
+    api_endpoint = get_api_endpoint(args.auth_service, access_token)
     if api_endpoint is None:
         raise Exception('[-] RPC server offline')
 
@@ -440,7 +467,7 @@ def main():
 
     for curr in profile.profile.currency:
         print '[+] {}: {}'.format(curr.type, curr.amount)
-        
+
 
     origin = LatLng.from_degrees(FLOAT_LAT, FLOAT_LONG)
     while True:
