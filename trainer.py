@@ -5,6 +5,7 @@ import json
 import argparse
 import pokemon_pb2
 import time
+import os 
 
 from google.protobuf.internal import encoder
 from google.protobuf.message import DecodeError
@@ -168,12 +169,22 @@ def get_profile(access_token, api, useauth, *reqq):
 
     return api_req(api, access_token, req, useauth = useauth)
 
-def get_api_endpoint(access_token, api = API_URL):
-    p_ret = get_profile(access_token, api, None)
-    try:
-        return ('https://%s/rpc' % p_ret.api_url)
-    except:
-        return None
+def get_api_endpoint(service, access_token, api=API_URL):
+    profile_response = None
+    while not profile_response:
+        profile_response = retrying_get_profile(service, access_token, api,
+                                                None)
+        if not hasattr(profile_response, 'api_url'):
+            debug(
+                'retrying_get_profile: get_profile returned no api_url, retrying')
+            profile_response = None
+            continue
+        if not len(profile_response.api_url):
+            debug(
+                'get_api_endpoint: retrying_get_profile returned no-len api_url, retrying')
+            profile_response = None
+
+    return 'https://%s/rpc' % profile_response.api_url
 
 def login_google(username, password):
     print '[!] Google login for: {}'.format(username)
@@ -286,6 +297,9 @@ def get_args():
 
 def main():
     
+    full_path = os.path.realpath(__file__)
+    (path, filename) = os.path.split(full_path)
+
     args = get_args()
     
 
