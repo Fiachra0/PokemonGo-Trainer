@@ -1,5 +1,4 @@
 import flask
-import notifier
 from flask import Flask, render_template
 from flask_googlemaps import GoogleMaps
 from flask_googlemaps import Map
@@ -36,7 +35,7 @@ LOGIN_URL = \
 LOGIN_OAUTH = 'https://sso.pokemon.com/sso/oauth2.0/accessToken'
 APP = 'com.nianticlabs.pokemongo'
 
-with open('credentials.json') as file:
+with open('config/credentials.json') as file:
     credentials = json.load(file)
 
 PTC_CLIENT_SECRET = credentials.get('ptc_client_secret', None)
@@ -450,7 +449,7 @@ def get_args():
         "step_limit": 4
     }
     # load config file
-    with open('config.json') as data_file:
+    with open('config/config.json') as data_file:
         data = json.load(data_file)
         for key in data:
             default_args[key] = str(data[key])
@@ -587,7 +586,7 @@ def process_step(args, api_endpoint, access_token, profile_response,
                     if hash not in seen:
                         visible.append(wild)
                         seen.add(hash)
-         except AttributeError:
+        except AttributeError:
             break
         
 
@@ -626,5 +625,4 @@ def process_step(args, api_endpoint, access_token, profile_response,
 
 if __name__ == '__main__':
     args = get_args()
-    register_background_thread(initial_registration=True)
-    app.run(debug=True, threaded=True, host=args.host, port=args.port)
+    main()
