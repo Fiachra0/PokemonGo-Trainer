@@ -58,7 +58,7 @@ SESSION.verify = False
 global_password = None
 global_token = None
 access_token = None
-DEBUG = False
+DEBUG = True
 COORDS_LATITUDE = 0
 COORDS_LONGITUDE = 0
 COORDS_ALTITUDE = 0
@@ -94,50 +94,76 @@ def set_location_coords(lat, long, alt):
 def get_location_coords():
     return (COORDS_LATITUDE, COORDS_LONGITUDE, COORDS_ALTITUDE)
 
-def api_req(api_endpoint, access_token, *mehs, **kw):
-    try:
-        p_req = pokemon_pb2.RequestEnvelop()
-        p_req.rpc_id = 1469378659230941192
+def retrying_api_req(service, api_endpoint, access_token, *args, **kwargs):
+    while True:
+        try:
+            response = api_req(service, api_endpoint, access_token, *args,
+                               **kwargs)
+            if response:
+                return response
+            debug('retrying_api_req: api_req returned None, retrying')
+        except (InvalidURL, ConnectionError, DecodeError), e:
+            debug('retrying_api_req: request error ({}), retrying'.format(
+                str(e)))
+        time.sleep(1)
 
-        p_req.unknown1 = 2
 
-        p_req.latitude, p_req.longitude, p_req.altitude = get_location_coords()
+def api_req(service, api_endpoint, access_token, *args, **kwargs):
+    p_req = pokemon_pb2.RequestEnvelop()
+    p_req.rpc_id = 1469378659230941192
 
-        p_req.unknown12 = 989
+    p_req.unknown1 = 2
 
-        if 'useauth' not in kw or not kw['useauth']:
-            p_req.auth.provider = 'ptc'
-            p_req.auth.token.contents = access_token
-            p_req.auth.token.unknown13 = 14
-        else:
-            p_req.unknown11.unknown71 = kw['useauth'].unknown71
-            p_req.unknown11.unknown72 = kw['useauth'].unknown72
-            p_req.unknown11.unknown73 = kw['useauth'].unknown73
+    (p_req.latitude, p_req.longitude, p_req.altitude) = \
+        get_location_coords()
 
-        for meh in mehs:
-            p_req.MergeFrom(meh)
+    p_req.unknown12 = 989
 
-        protobuf = p_req.SerializeToString()
+    if 'useauth' not in kwargs or not kwargs['useauth']:
+        p_req.auth.provider = service
+        p_req.auth.token.contents = access_token
+        p_req.auth.token.unknown13 = 14
+    else:
+        p_req.unknown11.unknown71 = kwargs['useauth'].unknown71
+        p_req.unknown11.unknown72 = kwargs['useauth'].unknown72
+        p_req.unknown11.unknown73 = kwargs['useauth'].unknown73
 
-        r = SESSION.post(api_endpoint, data=protobuf, verify=False)
+    for arg in args:
+        p_req.MergeFrom(arg)
 
-        p_ret = pokemon_pb2.ResponseEnvelop()
-        p_ret.ParseFromString(r.content)
+    protobuf = p_req.SerializeToString()
 
-        if DEBUG:
-            print("REQUEST:")
-            print(p_req)
-            print("Response:")
-            print(p_ret)
-            print("\n\n")
+    r = SESSION.post(api_endpoint, data=protobuf, verify=False)
 
-        print("Sleeping for 2 seconds to get around rate-limit.")
-        time.sleep(2)
-        return p_ret
-    except Exception, e:
-        if DEBUG:
-            print(e)
-        return None
+    p_ret = pokemon_pb2.ResponseEnvelop()
+    p_ret.ParseFromString(r.content)
+
+    if VERBOSE_DEBUG:
+        print 'REQUEST:'
+        print p_req
+        print 'Response:'
+        print p_ret
+        print '''
+'''
+    time.sleep(0.51)
+    return p_ret
+
+def get_api_endpoint(service, access_token, api=API_URL):
+    profile_response = None
+    while not profile_response:
+        profile_response = retrying_get_profile(service, access_token, api,
+                                                None)
+        if not hasattr(profile_response, 'api_url'):
+            debug(
+                'retrying_get_profile: get_profile returned no api_url, retrying')
+            profile_response = None
+            continue
+        if not len(profile_response.api_url):
+            debug(
+                'get_api_endpoint: retrying_get_profile returned no-len api_url, retrying')
+            profile_response = None
+
+    return 'https://%s/rpc' % profile_response.api_url
 
 def get_profile(access_token, api, useauth, *reqq):
     req = pokemon_pb2.RequestEnvelop()
@@ -169,23 +195,6 @@ def get_profile(access_token, api, useauth, *reqq):
 
     return api_req(api, access_token, req, useauth = useauth)
 
-def get_api_endpoint(service, access_token, api=API_URL):
-    profile_response = None
-    while not profile_response:
-        profile_response = retrying_get_profile(service, access_token, api,
-                                                None)
-        if not hasattr(profile_response, 'api_url'):
-            debug(
-                'retrying_get_profile: get_profile returned no api_url, retrying')
-            profile_response = None
-            continue
-        if not len(profile_response.api_url):
-            debug(
-                'get_api_endpoint: retrying_get_profile returned no-len api_url, retrying')
-            profile_response = None
-
-    return 'https://%s/rpc' % profile_response.api_url
-
 def retrying_get_profile(service, access_token, api, useauth, *reqq):
     profile_response = None
     while not profile_response:
@@ -202,7 +211,7 @@ def retrying_get_profile(service, access_token, api, useauth, *reqq):
             profile_response = None
 
     return profile_response
-    
+
 def login_google(username, password):
     print '[!] Google login for: {}'.format(username)
     r1 = perform_master_login(username, password, ANDROID_ID)
@@ -289,6 +298,23 @@ def get_heartbeat(service,
     heartbeat.ParseFromString(payload)
     return heartbeat
 
+def get_token(service, username, password):
+    """
+    Get token if it's not None
+    :return:
+    :rtype:
+    """
+
+    global global_token
+    if global_token is None:
+        if service == 'ptc':
+            global_token = login_ptc(username, password)
+        else:
+            global_token = login_google(username, password)
+        return global_token
+    else:
+        return global_token
+
 def get_args():
     # load default args
     default_args = {
@@ -319,6 +345,50 @@ def get_args():
             vars(namespace)[key] = default_args[key]
         return namespace
 
+@memoize
+def login(args):
+    global global_password
+    if not global_password:
+      if args.password:
+        global_password = args.password
+      else:
+        global_password = getpass.getpass()
+
+    access_token = get_token(args.auth_service, args.username, global_password)
+    if access_token is None:
+        raise Exception('[-] Wrong username/password')
+
+    print '[+] RPC Session Token: {} ...'.format(access_token[:25])
+
+    api_endpoint = get_api_endpoint(args.auth_service, access_token)
+    if api_endpoint is None:
+        raise Exception('[-] RPC server offline')
+
+    print '[+] Received API endpoint: {}'.format(api_endpoint)
+
+    profile_response = retrying_get_profile(args.auth_service, access_token,
+                                            api_endpoint, None)
+    if profile_response is None or not profile_response.payload:
+        raise Exception('Could not get profile')
+
+    print '[+] Login successful'
+
+    payload = profile_response.payload[0]
+    profile = pokemon_pb2.ResponseEnvelop.ProfilePayload()
+    profile.ParseFromString(payload)
+    print '[+] Username: {}'.format(profile.profile.username)
+
+    creation_time = \
+        datetime.fromtimestamp(int(profile.profile.creation_time)
+                               / 1000)
+    print '[+] You started playing Pokemon Go on: {}'.format(
+        creation_time.strftime('%Y-%m-%d %H:%M:%S'))
+
+    for curr in profile.profile.currency:
+        print '[+] {}: {}'.format(curr.type, curr.amount)
+
+    return api_endpoint, access_token, profile_response
+
 def main():
     
     full_path = os.path.realpath(__file__)
@@ -344,30 +414,33 @@ def main():
         return
     print('[+] RPC Session Token: {} ...'.format(access_token[:25]))
 
-    api_endpoint = get_api_endpoint(args.auth_service, access_token)
+       api_endpoint = get_api_endpoint(args.auth_service, access_token)
     if api_endpoint is None:
-        print('[-] RPC server offline')
-        return
-    print('[+] Received API endpoint: {}'.format(api_endpoint))
+        raise Exception('[-] RPC server offline')
 
-    response = get_profile(access_token, api_endpoint, None)
-    if response is not None:
-        print('[+] Login successful')
+    print '[+] Received API endpoint: {}'.format(api_endpoint)
 
-        payload = response.payload[0]
-        profile = pokemon_pb2.ResponseEnvelop.ProfilePayload()
-        profile.ParseFromString(payload)
-        print('[+] Username: {}'.format(profile.profile.username))
+    profile_response = retrying_get_profile(args.auth_service, access_token,
+                                            api_endpoint, None)
+    if profile_response is None or not profile_response.payload:
+        raise Exception('Could not get profile')
 
-        creation_time = datetime.fromtimestamp(int(profile.profile.creation_time)/1000)
-        print('[+] You are playing Pokemon Go since: {}'.format(
-            creation_time.strftime('%Y-%m-%d %H:%M:%S'),
-        ))
+    print '[+] Login successful'
 
-        for curr in profile.profile.currency:
-            print('[+] {}: {}'.format(curr.type, curr.amount))
-    else:
-        print('[-] Ooops...')
+    payload = profile_response.payload[0]
+    profile = pokemon_pb2.ResponseEnvelop.ProfilePayload()
+    profile.ParseFromString(payload)
+    print '[+] Username: {}'.format(profile.profile.username)
+
+    creation_time = \
+        datetime.fromtimestamp(int(profile.profile.creation_time)
+                               / 1000)
+    print '[+] You started playing Pokemon Go on: {}'.format(
+        creation_time.strftime('%Y-%m-%d %H:%M:%S'))
+
+    for curr in profile.profile.currency:
+        print '[+] {}: {}'.format(curr.type, curr.amount)
+        
 
     origin = LatLng.from_degrees(FLOAT_LAT, FLOAT_LONG)
     while True:
